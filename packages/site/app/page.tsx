@@ -9,7 +9,7 @@ import { useReadContract, useWriteContract } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { contractAddress, contractAbi } from "@/constants";
 import { Vote, Clock, User, CheckCircle2, Home as HomeIcon } from "lucide-react";
-import { createPublicClient, createWalletClient, custom, http, parseAbi } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseAbi, encodeFunctionData } from 'viem';
 import { mainnet } from 'viem/chains';
 import { toast } from "sonner"; // For notifications
 
@@ -134,6 +134,24 @@ export default function Home() {
     try {
       const [account] = await walletClient.getAddresses();
       
+      // First estimate gas
+      const gasEstimate = await publicClient.estimateGas({
+        account,
+        to: contractAddress,
+        data: encodeFunctionData({
+          abi: contractAbi,
+          functionName: 'createVotingWithPredefinedDuration',
+          args: [
+            formData.description,
+            formData.options.filter(opt => opt !== ''),
+            formData.durationType
+          ],
+        }),
+      });
+
+      // Add 20% buffer to gas estimate
+      const gasLimit = (gasEstimate * BigInt(120)) / BigInt(100);
+
       const { request } = await publicClient.simulateContract({
         account,
         address: contractAddress,
@@ -144,6 +162,7 @@ export default function Home() {
           formData.options.filter(opt => opt !== ''),
           formData.durationType
         ],
+        gas: gasLimit,
       });
 
       const hash = await walletClient.writeContract(request);
@@ -167,12 +186,27 @@ export default function Home() {
     try {
       const [account] = await walletClient.getAddresses();
       
+      // First estimate gas
+      const gasEstimate = await publicClient.estimateGas({
+        account,
+        to: votingAddress as `0x${string}`,
+        data: encodeFunctionData({
+          abi: contractAbi,
+          functionName: 'vote',
+          args: [BigInt(optionIndex)],
+        }),
+      });
+
+      // Add 20% buffer to gas estimate
+      const gasLimit = (gasEstimate * BigInt(120)) / BigInt(100);
+
       const { request } = await publicClient.simulateContract({
         account,
         address: votingAddress as `0x${string}`,
         abi: contractAbi,
         functionName: 'vote',
         args: [BigInt(optionIndex)],
+        gas: gasLimit,
       });
 
       const hash = await walletClient.writeContract(request);
@@ -216,7 +250,8 @@ export default function Home() {
       <Card>
         <CardHeader>
           <CardTitle>{details.description}</CardTitle>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-gray-500 flex items-center gap-1">
+            <Clock className="h-4 w-4" />
             {details.isActive ? 
               `Time remaining: ${formatTime(details.remainingTime)}` : 
               'Voting ended'
@@ -229,13 +264,17 @@ export default function Home() {
               <div key={index} className="flex justify-between items-center">
                 <span>{option.name}</span>
                 <div className="space-x-2">
-                  <span>{option.voteCount.toString()} votes</span>
+                  <span className="flex items-center gap-1">
+                    <User className="h-4 w-4" />
+                    {option.voteCount.toString()} votes
+                  </span>
                   {details.isActive && (
                     <Button
                       onClick={() => castVote(address, index)}
                       disabled={transactionPending}
                       size="sm"
                     >
+                      <Vote className="mr-2 h-4 w-4" />
                       Vote
                     </Button>
                   )}
@@ -261,12 +300,14 @@ export default function Home() {
               variant={!showCreateForm ? "default" : "outline"}
               onClick={() => setShowCreateForm(false)}
             >
+              <HomeIcon className="mr-2 h-4 w-4" />
               View Votings ({votingCount?.toString() || '0'})
             </Button>
             <Button 
               variant={showCreateForm ? "default" : "outline"}
               onClick={() => setShowCreateForm(true)}
             >
+              <CheckCircle2 className="mr-2 h-4 w-4" />
               Create New Voting
             </Button>
           </div>
