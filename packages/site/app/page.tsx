@@ -10,8 +10,57 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { contractAddress, contractAbi } from "@/constants";
 import { Vote, Clock, User, CheckCircle2, Home as HomeIcon } from "lucide-react";
 import { createPublicClient, createWalletClient, custom, http, parseAbi, encodeFunctionData } from 'viem';
-import { mainnet } from 'viem/chains';
+import { lineaSepolia } from 'viem/chains';
 import { toast } from "sonner"; // For notifications
+
+// VotingBase contract ABI for individual voting instances
+const votingAbi = [
+  {
+    "inputs": [],
+    "name": "description",
+    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getAllOptions",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "string", "name": "name", "type": "string" },
+          { "internalType": "uint256", "name": "voteCount", "type": "uint256" }
+        ],
+        "internalType": "struct VotingBase.Option[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "isVotingActive",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "votingEnd",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "_optionIndex", "type": "uint256" }],
+    "name": "vote",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+] as const;
 
 // Types
 interface VotingOption {
@@ -41,28 +90,64 @@ export default function Home() {
 
   // Initialize Viem clients
   const publicClient = createPublicClient({
-    chain: mainnet,
+    chain: lineaSepolia,
     transport: http()
   });
 
   const walletClient = createWalletClient({
-    chain: mainnet,
+    chain: lineaSepolia,
     transport: custom(window.ethereum)
   });
 
-  // Fetch all deployed votings
-  const { data: votingCount } = useReadContract({
-    address: contractAddress,
-    abi: contractAbi,
-    functionName: 'getVotingCount',
-  });
+  // Use deployedVotings array with index
+  const fetchVotings = async () => {
+    try {
+      setIsLoading(true);
+      let allVotings: string[] = [];
+      let index = 0;
+      
+      // Keep fetching until we get an error (means we've reached the end)
+      while (true) {
+        try {
+          const votingAddress = await publicClient.readContract({
+            address: contractAddress,
+            abi: contractAbi,
+            functionName: 'deployedVotings',
+            args: [index], // Use number index, not BigInt
+          });
 
-  // Fetch deployed votings array
-  const { data: deployedVotings } = useReadContract({
-    address: contractAddress,
-    abi: contractAbi,
-    functionName: 'getDeployedVotings',
-  });
+          // Break if we get a zero address
+          if (!votingAddress || votingAddress === '0x0000000000000000000000000000000000000000') {
+            break;
+          }
+
+          allVotings.push(votingAddress as string);
+          index++;
+        } catch (error) {
+          // Break the loop if we get an error (means we've reached the end)
+          break;
+        }
+      }
+
+      setVotings(allVotings);
+
+      // Now fetch details for each voting
+      for (const votingAddress of allVotings) {
+        await fetchVotingDetails(votingAddress);
+      }
+    } catch (error) {
+      handleError(error, 'Failed to fetch votings');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load votings when connected
+  useEffect(() => {
+    if (isConnected) {
+      fetchVotings();
+    }
+  }, [isConnected]);
 
   // Create new voting
   const { writeContract, isPending } = useWriteContract();
@@ -82,38 +167,44 @@ export default function Home() {
   // Fetch voting details
   const fetchVotingDetails = async (address: string) => {
     try {
-      const details = await publicClient.readContract({
-        address: contractAddress,
-        abi: contractAbi,
-        functionName: 'getVotingDetails',
-        args: [address],
-      }) as [string, VotingOption[], boolean, bigint];
+      const [description, options, isActive, votingEnd] = await Promise.all([
+        publicClient.readContract({
+          address: address as `0x${string}`,
+          abi: votingAbi,
+          functionName: 'description',
+          args: [],
+        }),
+        publicClient.readContract({
+          address: address as `0x${string}`,
+          abi: votingAbi,
+          functionName: 'getAllOptions',
+          args: [],
+        }),
+        publicClient.readContract({
+          address: address as `0x${string}`,
+          abi: votingAbi,
+          functionName: 'isVotingActive',
+          args: [],
+        }),
+        publicClient.readContract({
+          address: address as `0x${string}`,
+          abi: votingAbi,
+          functionName: 'votingEnd',
+          args: [],
+        })
+      ]);
       
       setVotingDetails(prev => ({
         ...prev,
         [address]: {
-          description: details[0],
-          options: details[1],
-          isActive: details[2],
-          remainingTime: details[3]
+          description: description as string,
+          options: options as VotingOption[],
+          isActive: isActive as boolean,
+          remainingTime: (BigInt(votingEnd as bigint) - BigInt(Math.floor(Date.now() / 1000)))
         }
       }));
     } catch (error) {
       handleError(error, 'Failed to fetch voting details');
-    }
-  };
-
-  // Fetch all votings
-  const fetchVotings = async () => {
-    try {
-      const deployedVotings = await publicClient.readContract({
-        address: contractAddress,
-        abi: contractAbi,
-        functionName: 'getDeployedVotings',
-      }) as string[];
-      setVotings(deployedVotings);
-    } catch (error) {
-      handleError(error, 'Failed to fetch votings');
     }
   };
 
@@ -134,26 +225,7 @@ export default function Home() {
     try {
       const [account] = await walletClient.getAddresses();
       
-      // First estimate gas
-      const gasEstimate = await publicClient.estimateGas({
-        account,
-        to: contractAddress,
-        data: encodeFunctionData({
-          abi: contractAbi,
-          functionName: 'createVotingWithPredefinedDuration',
-          args: [
-            formData.description,
-            formData.options.filter(opt => opt !== ''),
-            formData.durationType
-          ],
-        }),
-      });
-
-      // Add 20% buffer to gas estimate
-      const gasLimit = (gasEstimate * BigInt(120)) / BigInt(100);
-
-      const { request } = await publicClient.simulateContract({
-        account,
+      await writeContract({
         address: contractAddress,
         abi: contractAbi,
         functionName: 'createVotingWithPredefinedDuration',
@@ -162,15 +234,9 @@ export default function Home() {
           formData.options.filter(opt => opt !== ''),
           formData.durationType
         ],
-        gas: gasLimit,
       });
 
-      const hash = await walletClient.writeContract(request);
-      toast.loading('Creating voting...');
-      
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
       toast.success('Voting created successfully!');
-      
       await fetchVotings();
       resetForm();
     } catch (error) {
@@ -184,37 +250,14 @@ export default function Home() {
   const castVote = async (votingAddress: string, optionIndex: number) => {
     setTransactionPending(true);
     try {
-      const [account] = await walletClient.getAddresses();
-      
-      // First estimate gas
-      const gasEstimate = await publicClient.estimateGas({
-        account,
-        to: votingAddress as `0x${string}`,
-        data: encodeFunctionData({
-          abi: contractAbi,
-          functionName: 'vote',
-          args: [BigInt(optionIndex)],
-        }),
-      });
-
-      // Add 20% buffer to gas estimate
-      const gasLimit = (gasEstimate * BigInt(120)) / BigInt(100);
-
-      const { request } = await publicClient.simulateContract({
-        account,
+      await writeContract({
         address: votingAddress as `0x${string}`,
-        abi: contractAbi,
+        abi: votingAbi,
         functionName: 'vote',
         args: [BigInt(optionIndex)],
-        gas: gasLimit,
       });
 
-      const hash = await walletClient.writeContract(request);
-      toast.loading('Submitting vote...');
-      
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
       toast.success('Vote submitted successfully!');
-      
       await fetchVotingDetails(votingAddress);
     } catch (error) {
       handleError(error, 'Failed to cast vote');
@@ -222,24 +265,6 @@ export default function Home() {
       setTransactionPending(false);
     }
   };
-
-  // Event listeners
-  useEffect(() => {
-    if (!isConnected) return;
-
-    const unwatch = publicClient.watchContractEvent({
-      address: contractAddress,
-      abi: contractAbi,
-      eventName: 'VotingCreated',
-      onLogs: (logs) => {
-        fetchVotings();
-      },
-    });
-
-    return () => {
-      unwatch();
-    };
-  }, [isConnected]);
 
   // Render voting card
   const VotingCard = ({ address }: { address: string }) => {
@@ -250,12 +275,18 @@ export default function Home() {
       <Card>
         <CardHeader>
           <CardTitle>{details.description}</CardTitle>
-          <div className="text-sm text-gray-500 flex items-center gap-1">
-            <Clock className="h-4 w-4" />
-            {details.isActive ? 
-              `Time remaining: ${formatTime(details.remainingTime)}` : 
-              'Voting ended'
-            }
+          <div className="flex flex-col gap-1 text-sm text-gray-500">
+            <div className="flex items-center gap-1">
+              <Clock className="h-4 w-4" />
+              {details.isActive ? 
+                `Time remaining: ${formatTime(details.remainingTime)}` : 
+                'Voting ended'
+              }
+            </div>
+            <div className="flex items-center gap-1">
+              <User className="h-4 w-4" />
+              Contract: {address.slice(0, 6)}...{address.slice(-4)}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -301,7 +332,7 @@ export default function Home() {
               onClick={() => setShowCreateForm(false)}
             >
               <HomeIcon className="mr-2 h-4 w-4" />
-              View Votings ({votingCount?.toString() || '0'})
+              View Votings ({votings.length})
             </Button>
             <Button 
               variant={showCreateForm ? "default" : "outline"}
@@ -312,7 +343,9 @@ export default function Home() {
             </Button>
           </div>
 
-          {showCreateForm ? (
+          {isLoading ? (
+            <div className="mt-8 text-center">Loading votings...</div>
+          ) : showCreateForm ? (
             <Card className="mt-8 max-w-md mx-auto">
               <CardHeader>
                 <CardTitle>Create New Voting</CardTitle>
@@ -384,9 +417,15 @@ export default function Home() {
             </Card>
           ) : (
             <div className="mt-8 space-y-4">
-              {votings.map((address) => (
-                <VotingCard key={address} address={address} />
-              ))}
+              {votings.length === 0 ? (
+                <div className="text-center text-gray-500">
+                  No votings created yet
+                </div>
+              ) : (
+                votings.map((address) => (
+                  <VotingCard key={address} address={address} />
+                ))
+              )}
             </div>
           )}
         </>
