@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount, useWalletClient } from "wagmi";
 import { ConnectButton } from "@consensys/connect-button";
 import { Button } from "@/components/ui/button";
@@ -9,49 +9,243 @@ import { useReadContract, useWriteContract } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { contractAddress, contractAbi } from "@/constants";
 import { Vote, Clock, User, CheckCircle2, Home as HomeIcon } from "lucide-react";
+import { createPublicClient, createWalletClient, custom, http, parseAbi } from 'viem';
+import { mainnet } from 'viem/chains';
+import { toast } from "sonner"; // For notifications
+
+// Types
+interface VotingOption {
+  name: string;
+  voteCount: bigint;
+}
+
+interface VotingDetails {
+  description: string;
+  options: VotingOption[];
+  isActive: boolean;
+  remainingTime: bigint;
+}
 
 export default function Home() {
   const { address, isConnected } = useAccount();
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  
-  // Read all voting options
-  const { data: options, isLoading: optionsLoading } = useReadContract({
-    address: contractAddress,
-    abi: contractAbi,
-    functionName: 'getAllOptions',
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [votings, setVotings] = useState<string[]>([]);
+  const [votingDetails, setVotingDetails] = useState<Record<string, VotingDetails>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [transactionPending, setTransactionPending] = useState(false);
+  const [formData, setFormData] = useState({
+    description: '',
+    options: ['', ''],
+    durationType: 1
   });
 
-  // Read if voting is still active
-  const { data: isVotingActive } = useReadContract({
-    address: contractAddress,
-    abi: contractAbi,
-    functionName: 'isVotingActive',
+  // Initialize Viem clients
+  const publicClient = createPublicClient({
+    chain: mainnet,
+    transport: http()
   });
 
-  // Read if user has already voted
-  const { data: hasVoted } = useReadContract({
-    address: contractAddress,
-    abi: contractAbi,
-    functionName: 'hasVoted',
-    args: [address],
+  const walletClient = createWalletClient({
+    chain: mainnet,
+    transport: custom(window.ethereum)
   });
 
-  // Setup vote transaction
+  // Fetch all deployed votings
+  const { data: votingCount } = useReadContract({
+    address: contractAddress,
+    abi: contractAbi,
+    functionName: 'getVotingCount',
+  });
+
+  // Fetch deployed votings array
+  const { data: deployedVotings } = useReadContract({
+    address: contractAddress,
+    abi: contractAbi,
+    functionName: 'getDeployedVotings',
+  });
+
+  // Create new voting
   const { writeContract, isPending } = useWriteContract();
 
-  const handleVote = async () => {
-    if (selectedOption === null) return;
+  // Error handling wrapper
+  const handleError = (error: any, message: string) => {
+    console.error(message, error);
+    if (error.message?.includes('user rejected')) {
+      toast.error('Transaction rejected by user');
+    } else if (error.message?.includes('insufficient funds')) {
+      toast.error('Insufficient funds for transaction');
+    } else {
+      toast.error(`Error: ${message}`);
+    }
+  };
 
+  // Fetch voting details
+  const fetchVotingDetails = async (address: string) => {
     try {
-      await writeContract({
+      const details = await publicClient.readContract({
         address: contractAddress,
         abi: contractAbi,
-        functionName: 'vote',
-        args: [BigInt(selectedOption)],
-      });
+        functionName: 'getVotingDetails',
+        args: [address],
+      }) as [string, VotingOption[], boolean, bigint];
+      
+      setVotingDetails(prev => ({
+        ...prev,
+        [address]: {
+          description: details[0],
+          options: details[1],
+          isActive: details[2],
+          remainingTime: details[3]
+        }
+      }));
     } catch (error) {
-      console.error('Voting failed:', error);
+      handleError(error, 'Failed to fetch voting details');
     }
+  };
+
+  // Fetch all votings
+  const fetchVotings = async () => {
+    try {
+      const deployedVotings = await publicClient.readContract({
+        address: contractAddress,
+        abi: contractAbi,
+        functionName: 'getDeployedVotings',
+      }) as string[];
+      setVotings(deployedVotings);
+    } catch (error) {
+      handleError(error, 'Failed to fetch votings');
+    }
+  };
+
+  // Reset form after submission
+  const resetForm = () => {
+    setFormData({
+      description: '',
+      options: ['', ''],
+      durationType: 1
+    });
+  };
+
+  // Create new voting
+  const createVoting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTransactionPending(true);
+
+    try {
+      const [account] = await walletClient.getAddresses();
+      
+      const { request } = await publicClient.simulateContract({
+        account,
+        address: contractAddress,
+        abi: contractAbi,
+        functionName: 'createVotingWithPredefinedDuration',
+        args: [
+          formData.description,
+          formData.options.filter(opt => opt !== ''),
+          formData.durationType
+        ],
+      });
+
+      const hash = await walletClient.writeContract(request);
+      toast.loading('Creating voting...');
+      
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      toast.success('Voting created successfully!');
+      
+      await fetchVotings();
+      resetForm();
+    } catch (error) {
+      handleError(error, 'Failed to create voting');
+    } finally {
+      setTransactionPending(false);
+    }
+  };
+
+  // Cast vote
+  const castVote = async (votingAddress: string, optionIndex: number) => {
+    setTransactionPending(true);
+    try {
+      const [account] = await walletClient.getAddresses();
+      
+      const { request } = await publicClient.simulateContract({
+        account,
+        address: votingAddress as `0x${string}`,
+        abi: contractAbi,
+        functionName: 'vote',
+        args: [BigInt(optionIndex)],
+      });
+
+      const hash = await walletClient.writeContract(request);
+      toast.loading('Submitting vote...');
+      
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      toast.success('Vote submitted successfully!');
+      
+      await fetchVotingDetails(votingAddress);
+    } catch (error) {
+      handleError(error, 'Failed to cast vote');
+    } finally {
+      setTransactionPending(false);
+    }
+  };
+
+  // Event listeners
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const unwatch = publicClient.watchContractEvent({
+      address: contractAddress,
+      abi: contractAbi,
+      eventName: 'VotingCreated',
+      onLogs: (logs) => {
+        fetchVotings();
+      },
+    });
+
+    return () => {
+      unwatch();
+    };
+  }, [isConnected]);
+
+  // Render voting card
+  const VotingCard = ({ address }: { address: string }) => {
+    const details = votingDetails[address];
+    if (!details) return null;
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{details.description}</CardTitle>
+          <div className="text-sm text-gray-500">
+            {details.isActive ? 
+              `Time remaining: ${formatTime(details.remainingTime)}` : 
+              'Voting ended'
+            }
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {details.options.map((option, index) => (
+              <div key={index} className="flex justify-between items-center">
+                <span>{option.name}</span>
+                <div className="space-x-2">
+                  <span>{option.voteCount.toString()} votes</span>
+                  {details.isActive && (
+                    <Button
+                      onClick={() => castVote(address, index)}
+                      disabled={transactionPending}
+                      size="sm"
+                    >
+                      Vote
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
   };
 
   return (
@@ -61,46 +255,112 @@ export default function Home() {
       </div>
 
       {isConnected && (
-        <Card className="mt-8 max-w-md mx-auto">
-          <CardHeader>
-            <CardTitle>Voting System</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {optionsLoading ? (
-              <div>Loading options...</div>
-            ) : hasVoted ? (
-              <div className="text-center text-yellow-600">You have already voted!</div>
-            ) : !isVotingActive ? (
-              <div className="text-center text-red-600">Voting has ended</div>
-            ) : (
-              <div className="space-y-4">
-                {options?.map((option, index) => (
-                  <div key={index} className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      id={`option-${index}`}
-                      name="voting-option"
-                      checked={selectedOption === index}
-                      onChange={() => setSelectedOption(index)}
-                      className="w-4 h-4"
+        <>
+          <div className="flex justify-center gap-4 mt-8">
+            <Button 
+              variant={!showCreateForm ? "default" : "outline"}
+              onClick={() => setShowCreateForm(false)}
+            >
+              View Votings ({votingCount?.toString() || '0'})
+            </Button>
+            <Button 
+              variant={showCreateForm ? "default" : "outline"}
+              onClick={() => setShowCreateForm(true)}
+            >
+              Create New Voting
+            </Button>
+          </div>
+
+          {showCreateForm ? (
+            <Card className="mt-8 max-w-md mx-auto">
+              <CardHeader>
+                <CardTitle>Create New Voting</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={createVoting} className="space-y-4">
+                  <div>
+                    <Input
+                      placeholder="Voting Description"
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        description: e.target.value
+                      }))}
                     />
-                    <label htmlFor={`option-${index}`} className="flex-1">
-                      {option.name} ({option.voteCount.toString()} votes)
-                    </label>
                   </div>
-                ))}
-                <Button 
-                  onClick={handleVote}
-                  disabled={selectedOption === null || isPending || hasVoted}
-                  className="w-full"
-                >
-                  {isPending ? 'Submitting Vote...' : 'Vote'}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+
+                  <div className="space-y-2">
+                    {formData.options.map((option, index) => (
+                      <Input
+                        key={index}
+                        placeholder={`Option ${index + 1}`}
+                        value={option}
+                        onChange={(e) => {
+                          const newOptions = [...formData.options];
+                          newOptions[index] = e.target.value;
+                          setFormData(prev => ({
+                            ...prev,
+                            options: newOptions
+                          }));
+                        }}
+                      />
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setFormData(prev => ({
+                        ...prev,
+                        options: [...prev.options, '']
+                      }))}
+                    >
+                      Add Option
+                    </Button>
+                  </div>
+
+                  <select
+                    className="w-full p-2 border rounded"
+                    value={formData.durationType}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      durationType: Number(e.target.value)
+                    }))}
+                  >
+                    <option value={1}>5 Minutes</option>
+                    <option value={2}>30 Minutes</option>
+                    <option value={3}>1 Day</option>
+                    <option value={4}>1 Week</option>
+                  </select>
+
+                  <Button 
+                    type="submit"
+                    disabled={transactionPending}
+                    className="w-full"
+                  >
+                    {transactionPending ? 'Creating...' : 'Create Voting'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="mt-8 space-y-4">
+              {votings.map((address) => (
+                <VotingCard key={address} address={address} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </main>
   );
+}
+
+// Utility function to format time
+function formatTime(seconds: bigint): string {
+  const days = Number(seconds) / (24 * 60 * 60);
+  const hours = (Number(seconds) % (24 * 60 * 60)) / (60 * 60);
+  const minutes = (Number(seconds) % (60 * 60)) / 60;
+  
+  if (days >= 1) return `${Math.floor(days)}d ${Math.floor(hours)}h`;
+  if (hours >= 1) return `${Math.floor(hours)}h ${Math.floor(minutes)}m`;
+  return `${Math.floor(minutes)}m`;
 }
