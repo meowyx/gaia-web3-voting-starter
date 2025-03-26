@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 /**
- * @title Voting
- * @dev Smart contract for a single voting scenario with multiple options
+ * @title VotingBase
+ * @dev Base contract for a single voting scenario with multiple options
  */
-contract Voting {
+contract VotingBase {
     // Define a struct to represent a voting option
     struct Option {
         string name;
@@ -15,11 +15,11 @@ contract Voting {
     // Array to store all options
     Option[] public options;
 
-    // Description of the voting scenario
+    // Description/name of the voting scenario
     string public description;
 
-    // Address of the contract owner
-    address public owner;
+    // Address of the contract creator (who cannot vote)
+    address public creator;
 
     // Mapping to keep track of voters
     mapping(address => bool) public voters;
@@ -33,20 +33,19 @@ contract Voting {
     event OptionAdded(string name);
 
     /**
-     * @dev Constructor to initialize the contract
-     * @param _description Description of the voting scenario
-     * @param _optionNames Array of option names (up to 5)
+     * @dev Constructor to initialize the base contract
+     * @param _description Description/name of the voting scenario
+     * @param _optionNames Array of option names
      * @param _durationInMinutes Duration of voting period in minutes
+     * @param _creator Address of the voting creator
      */
     constructor(
         string memory _description,
         string[] memory _optionNames,
-        uint256 _durationInMinutes
+        uint256 _durationInMinutes,
+        address _creator
     ) {
-        require(
-            _optionNames.length >= 2 && _optionNames.length <= 5,
-            "Must have between 2 and 5 options"
-        );
+        require(_optionNames.length >= 2, "Must have at least 2 options");
 
         // Set the description
         description = _description;
@@ -57,18 +56,12 @@ contract Voting {
             emit OptionAdded(_optionNames[i]);
         }
 
-        // Set the contract owner
-        owner = msg.sender;
+        // Set the contract creator
+        creator = _creator;
 
         // Set voting period start and end times
         votingStart = block.timestamp;
         votingEnd = block.timestamp + (_durationInMinutes * 1 minutes);
-    }
-
-    // Modifier to restrict access to owner only
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only the owner can call this function");
-        _;
     }
 
     // Modifier to check if voting is active
@@ -80,24 +73,17 @@ contract Voting {
         _;
     }
 
-    /**
-     * @dev Function to add a new option (only owner can call and only if voting hasn't started)
-     * @param _name Name of the new option
-     */
-    function addOption(string memory _name) public onlyOwner {
-        require(block.timestamp < votingStart, "Voting has already started");
-        require(options.length < 5, "Maximum number of options (5) reached");
-
-        options.push(Option({name: _name, voteCount: 0}));
-
-        emit OptionAdded(_name);
+    // Modifier to prevent creator from voting
+    modifier notCreator() {
+        require(msg.sender != creator, "Creator cannot vote");
+        _;
     }
 
     /**
      * @dev Function for voters to cast their vote
      * @param _optionIndex Index of the option to vote for
      */
-    function vote(uint256 _optionIndex) public votingActive {
+    function vote(uint256 _optionIndex) public votingActive notCreator {
         // Check if the voter hasn't voted before
         require(!voters[msg.sender], "You have already voted");
 
@@ -143,16 +129,15 @@ contract Voting {
      * @return Remaining time in seconds
      */
     function getRemainingTime() public view returns (uint256) {
-        // Check if voting has started
-        require(block.timestamp >= votingStart, "Voting has not started yet");
-
-        // If voting has ended, return 0
-        if (block.timestamp >= votingEnd) {
-            return 0;
+        if (block.timestamp < votingStart) {
+            return votingEnd - votingStart; // Voting hasn't started yet
         }
 
-        // Otherwise, return the remaining time
-        return votingEnd - block.timestamp;
+        if (block.timestamp >= votingEnd) {
+            return 0; // Voting has ended
+        }
+
+        return votingEnd - block.timestamp; // Voting is active
     }
 
     /**
