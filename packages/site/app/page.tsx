@@ -88,16 +88,14 @@ export default function Home() {
     durationType: 1
   });
 
-  // Initialize Viem clients
+  // Initialize public client (keep this)
   const publicClient = createPublicClient({
     chain: lineaSepolia,
     transport: http()
   });
 
-  const walletClient = createWalletClient({
-    chain: lineaSepolia,
-    transport: custom(window.ethereum)
-  });
+  // Use Wagmi's hook instead (you already have this)
+  const { data: walletClient } = useWalletClient();
 
   // Use deployedVotings array with index
   const fetchVotings = async () => {

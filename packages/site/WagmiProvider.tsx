@@ -1,14 +1,13 @@
-
 "use client";
 
 import { WagmiProvider } from "wagmi";
 import { config } from "@/wagmi.config";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createPublicClient, http } from "viem";
-import { linea } from "viem/chains";
+import { lineaSepolia } from "viem/chains";
 
 export const client = createPublicClient({
-  chain: linea,
+  chain: lineaSepolia,
   transport: http(),
 });
 
