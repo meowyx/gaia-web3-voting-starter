@@ -7,16 +7,16 @@ import { tools } from "../../../ai/tools";
 export async function POST(request: Request) {
   const { messages } = await request.json();
 
-  // Use environment variables instead of hardcoded values
+  // Use GaiaNet node configuration
   const openai = createOpenAI({
-    baseURL: process.env.GAIA_NODE_URL,  
-    apiKey: process.env.GAIA_API_KEY 
+    baseURL: "https://0xc780292a9a5c7cdaa5d682984395d48bd65859c3.gaia.domains/v1",
+    apiKey: "" // API key can be empty for GaiaNet nodes
   });
 
   try {
     const result = streamText({
-      model: openai("llama"),
-      system: "you are a friendly assistant",
+      model: openai("DeepSeek-R1-Distill-Llama-8B-Q5_K_M"),
+      system: "You are a helpful assistant.",
       messages,
       maxSteps: 5,
       tools,

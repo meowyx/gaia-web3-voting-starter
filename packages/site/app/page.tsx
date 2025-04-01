@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { useReadContract, useWriteContract } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { contractAddress, contractAbi } from "@/constants";
-import { Vote, Clock, User, CheckCircle2, Home as HomeIcon } from "lucide-react";
+import { Vote, Clock, User, CheckCircle2, Home as HomeIcon, MessageSquare } from "lucide-react";
 import { createPublicClient, createWalletClient, custom, http, parseAbi, encodeFunctionData } from 'viem';
 import { lineaSepolia } from 'viem/chains';
 import { toast } from "sonner"; // For notifications
+import Chat from "./components/Chat";
 
 // VotingBase contract ABI for individual voting instances
 const votingAbi = [
@@ -78,6 +79,7 @@ interface VotingDetails {
 export default function Home() {
   const { address, isConnected } = useAccount();
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [votings, setVotings] = useState<string[]>([]);
   const [votingDetails, setVotingDetails] = useState<Record<string, VotingDetails>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -221,6 +223,10 @@ export default function Home() {
     setTransactionPending(true);
 
     try {
+      if (!walletClient) {
+        throw new Error('Wallet client not initialized');
+      }
+      
       const [account] = await walletClient.getAddresses();
       
       await writeContract({
@@ -317,118 +323,145 @@ export default function Home() {
   };
 
   return (
-    <main className="container mx-auto p-4">
-      <div className="flex justify-center items-center mt-16">
-        <ConnectButton />
-      </div>
-
-      {isConnected && (
-        <>
-          <div className="flex justify-center gap-4 mt-8">
-            <Button 
-              variant={!showCreateForm ? "default" : "outline"}
-              onClick={() => setShowCreateForm(false)}
-            >
-              <HomeIcon className="mr-2 h-4 w-4" />
-              View Votings ({votings.length})
-            </Button>
-            <Button 
-              variant={showCreateForm ? "default" : "outline"}
-              onClick={() => setShowCreateForm(true)}
-            >
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Create New Voting
-            </Button>
-          </div>
-
-          {isLoading ? (
-            <div className="mt-8 text-center">Loading votings...</div>
-          ) : showCreateForm ? (
-            <Card className="mt-8 max-w-md mx-auto">
-              <CardHeader>
-                <CardTitle>Create New Voting</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={createVoting} className="space-y-4">
-                  <div>
-                    <Input
-                      placeholder="Voting Description"
-                      value={formData.description}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        description: e.target.value
-                      }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    {formData.options.map((option, index) => (
-                      <Input
-                        key={index}
-                        placeholder={`Option ${index + 1}`}
-                        value={option}
-                        onChange={(e) => {
-                          const newOptions = [...formData.options];
-                          newOptions[index] = e.target.value;
-                          setFormData(prev => ({
-                            ...prev,
-                            options: newOptions
-                          }));
-                        }}
-                      />
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setFormData(prev => ({
-                        ...prev,
-                        options: [...prev.options, '']
-                      }))}
-                    >
-                      Add Option
-                    </Button>
-                  </div>
-
-                  <select
-                    className="w-full p-2 border rounded"
-                    value={formData.durationType}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      durationType: Number(e.target.value)
-                    }))}
-                  >
-                    <option value={1}>5 Minutes</option>
-                    <option value={2}>30 Minutes</option>
-                    <option value={3}>1 Day</option>
-                    <option value={4}>1 Week</option>
-                  </select>
-
-                  <Button 
-                    type="submit"
-                    disabled={transactionPending}
-                    className="w-full"
-                  >
-                    {transactionPending ? 'Creating...' : 'Create Voting'}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="mt-8 space-y-4">
-              {votings.length === 0 ? (
-                <div className="text-center text-gray-500">
-                  No votings created yet
-                </div>
-              ) : (
-                votings.map((address) => (
-                  <VotingCard key={address} address={address} />
-                ))
-              )}
+    <div className="min-h-screen bg-gray-100">
+      <nav className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center">
+              <HomeIcon className="h-8 w-8 text-blue-500" />
+              <span className="ml-2 text-xl font-semibold">Voting DApp</span>
             </div>
-          )}
-        </>
-      )}
-    </main>
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowChat(!showChat)}
+                className="flex items-center"
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                {showChat ? 'Hide Chat' : 'Show Chat'}
+              </Button>
+              <ConnectButton />
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {showChat ? (
+          <div className="bg-white rounded-lg shadow">
+            <Chat />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Existing voting content */}
+            {isConnected ? (
+              <>
+                <div className="flex justify-between items-center">
+                  <h1 className="text-2xl font-bold">Active Votings</h1>
+                  <Button onClick={() => setShowCreateForm(!showCreateForm)}>
+                    Create New Voting
+                  </Button>
+                </div>
+
+                {showCreateForm && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Create New Voting</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={createVoting} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Description
+                          </label>
+                          <Input
+                            value={formData.description}
+                            onChange={(e) =>
+                              setFormData({ ...formData, description: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Options (one per line)
+                          </label>
+                          {formData.options.map((option, index) => (
+                            <Input
+                              key={index}
+                              value={option}
+                              onChange={(e) => {
+                                const newOptions = [...formData.options];
+                                newOptions[index] = e.target.value;
+                                setFormData({ ...formData, options: newOptions });
+                              }}
+                              className="mt-2"
+                            />
+                          ))}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                options: [...formData.options, ""],
+                              })
+                            }
+                            className="mt-2"
+                          >
+                            Add Option
+                          </Button>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Duration
+                          </label>
+                          <select
+                            value={formData.durationType}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                durationType: parseInt(e.target.value),
+                              })
+                            }
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          >
+                            <option value={1}>1 Hour</option>
+                            <option value={2}>1 Day</option>
+                            <option value={3}>1 Week</option>
+                          </select>
+                        </div>
+                        <Button type="submit" disabled={transactionPending}>
+                          Create Voting
+                        </Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {isLoading ? (
+                  <div className="text-center">Loading votings...</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {votings.map((address) => (
+                      <VotingCard key={address} address={address} />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <h2 className="text-2xl font-semibold mb-4">Welcome to Voting DApp</h2>
+                <p className="text-gray-600 mb-4">
+                  Please connect your wallet to view and participate in votings.
+                </p>
+                <ConnectButton />
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
 
