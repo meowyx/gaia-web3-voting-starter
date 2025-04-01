@@ -9,7 +9,7 @@ export async function POST(request: Request) {
 
   // Use GaiaNet node configuration
   const openai = createOpenAI({
-    baseURL: "https://0xc780292a9a5c7cdaa5d682984395d48bd65859c3.gaia.domains/v1",
+    baseURL: "",
     apiKey: "" // API key can be empty for GaiaNet nodes
   });
 
