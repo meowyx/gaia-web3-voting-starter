@@ -2,7 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import { tools } from "@/ai/tools";
 
-export const GAIA_API_ENDPOINT = "https://0xc780292a9a5c7cdaa5d682984395d48bd65859c3.gaia.domains/v1";
+export const GAIA_API_ENDPOINT = "";
 export const GAIA_MODEL = "Llama-3-Groq-8B-Tool";
 
 export const systemPrompt = `You are a friendly and knowledgeable AI assistant with expertise in blockchain voting systems. 
