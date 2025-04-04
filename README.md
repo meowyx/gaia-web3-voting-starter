@@ -95,20 +95,20 @@ To use your own Gaia node with this application, follow these steps:
    ```typescript
    const GAIA_API_ENDPOINT = 'https://api.gaianet.ai/v1';
    const GAIA_MODEL = 'Llama-3-Groq-8B-Tool';
-   
-   // Add your API key here
-   const openai = createOpenAI({
-  baseURL: GAIA_API_ENDPOINT,
-  apiKey: "" // API key Here
-});
+    
+    // Add your API key here
+    const openai = createOpenAI({
+    baseURL: GAIA_API_ENDPOINT,
+    apiKey: "" // API key Here
+    });
 
    ```
 
 1. **Add to Environment Variables**:
    - Create or update `.env.local` in the `packages/site` directory:
-   ```
-   GAIA_API_KEY=your_api_key_here
-   ```
+    ```
+    GAIA_API_KEY=your_api_key_here
+    ```
 
 ### System Requirements
 
@@ -253,4 +253,14 @@ pnpm dev
 - [Alchemy Documentation](https://docs.alchemy.com/)
 - [Linea Explorer](https://sepolia.lineascan.build/)
 
+## Contributing
 
+Want to contribute? Here's how:
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please make sure to test your changes before submitting a PR.
