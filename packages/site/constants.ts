@@ -1,4 +1,4 @@
-export const contractAddress = "0x1a6cBe0991448c768E851C7f5C5Bd40e4FA02c66" as `0x${string}`;
+export const contractAddress = "0x67a60a31D25f5d96280ab92FA8aB4C6FD77B5e48" as `0x${string}`;
 
 
 
