@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { useReadContract, useWriteContract } from "wagmi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { contractAddress, contractAbi } from "@/constants";
-import { Vote, Clock, User, CheckCircle2, Home as HomeIcon, MessageSquare } from "lucide-react";
+import { Vote, Clock, User, CheckCircle2, MessageSquare, ExternalLink } from "lucide-react";
 import { createPublicClient, createWalletClient, custom, http, parseAbi, encodeFunctionData } from 'viem';
 import { lineaSepolia } from 'viem/chains';
 import { toast } from "sonner"; // For notifications
-import Chat from "./components/Chat";
+import Chat from "@/components/chat/Chat";
+import RobotLogo from "@/components/chat/RobotLogo";
 
 // VotingBase contract ABI for individual voting instances
 const votingAbi = [
@@ -78,8 +79,8 @@ interface VotingDetails {
 
 export default function Home() {
   const { address, isConnected } = useAccount();
+  const [showManualVoting, setShowManualVoting] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showChat, setShowChat] = useState(false);
   const [votings, setVotings] = useState<string[]>([]);
   const [votingDetails, setVotingDetails] = useState<Record<string, VotingDetails>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -328,17 +329,22 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <HomeIcon className="h-8 w-8 text-blue-500" />
-              <span className="ml-2 text-xl font-semibold">Voting DApp</span>
+              <button 
+                onClick={() => setShowManualVoting(false)} 
+                className="flex items-center hover:opacity-80 transition-opacity"
+              >
+                <RobotLogo className="h-8 w-8" />
+                <span className="ml-2 text-xl font-semibold">AI Voting DApp</span>
+              </button>
             </div>
             <div className="flex items-center space-x-4">
               <Button
                 variant="outline"
-                onClick={() => setShowChat(!showChat)}
+                onClick={() => setShowManualVoting(!showManualVoting)}
                 className="flex items-center"
               >
-                <MessageSquare className="h-4 w-4 mr-2" />
-                {showChat ? 'Hide Chat' : 'Show Chat'}
+                <Vote className="h-4 w-4 mr-2" />
+                {showManualVoting ? 'Show Chat' : 'Manual Voting'}
               </Button>
               <ConnectButton />
             </div>
@@ -347,9 +353,34 @@ export default function Home() {
       </nav>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {showChat ? (
+        {!showManualVoting ? (
           <div className="bg-white rounded-lg shadow">
-            <Chat />
+            <Chat 
+              votings={votings}
+              votingDetails={votingDetails}
+              fetchVotings={fetchVotings}
+              castVote={castVote}
+              createVoting={async (description, options, durationType) => {
+                await writeContract({
+                  address: contractAddress,
+                  abi: contractAbi,
+                  functionName: 'createVotingWithPredefinedDuration',
+                  args: [description, options, durationType],
+                });
+              }}
+              isConnected={isConnected}
+            />
+            <div className="flex items-center justify-center pb-4">
+              <a 
+                href="https://docs.gaianet.ai/intro/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center text-gray-600 hover:text-blue-500 transition-colors text-sm"
+              >
+                <span className="mr-1">Learn more About Gaia</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
           </div>
         ) : (
           <div className="space-y-6">
