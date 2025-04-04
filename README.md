@@ -1,6 +1,11 @@
 # Gaia Web3 Voting Starter Monorepo
 
+
+![Gaia AI Voting](./ai-voting.gif)
+
 A decentralized voting application built with Next.js, Hardhat, and [Gaia](https://docs.gaianet.ai/intro/).
+
+
 
 ## About Gaia
 
